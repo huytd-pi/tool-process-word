@@ -1,15 +1,15 @@
 # ==============================================================================
-# DocxMath Studio - Tu Dong Cai Dat Moi Truong Tren Windows
-# Ho tro: Windows 10, Windows 11, Windows Server (64-bit)
+# DocxMath Studio - Automated Environment Setup for Windows
+# Supported: Windows 10, Windows 11, Windows Server (64-bit)
 # ==============================================================================
 
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
-$Host.UI.RawUI.WindowTitle = "DocxMath Studio - Cai Dat Moi Truong Tu Dong"
+$Host.UI.RawUI.WindowTitle = "DocxMath Studio - Automated Setup"
 
 function Print-Header {
     Write-Host ""
     Write-Host "======================================================================" -ForegroundColor Cyan
-    Write-Host "         DocxMath Studio - Trình Tự Động Cài Đặt Môi Trường Windows   " -ForegroundColor Cyan
+    Write-Host "             DocxMath Studio - Automated Windows Setup                " -ForegroundColor Cyan
     Write-Host "======================================================================" -ForegroundColor Cyan
     Write-Host ""
 }
@@ -25,24 +25,24 @@ Print-Header
 $projectRoot = Split-Path -Parent $PSScriptRoot
 Set-Location $projectRoot
 
-Write-Host "Thư mục dự án: $projectRoot" -ForegroundColor Gray
+Write-Host "Project directory: $projectRoot" -ForegroundColor Gray
 Write-Host ""
 
 # ------------------------------------------------------------------------------
-# 1. KIỂM TRA VÀ CÀI ĐẶT PANDOC (Chuyển đổi công thức Word Equation OMML)
+# 1. CHECK AND INSTALL PANDOC (Required for Word Equation OMML export)
 # ------------------------------------------------------------------------------
-Write-Host "[1/4] Kiểm tra Pandoc (bắt buộc cho xuất công thức Word)..." -ForegroundColor Yellow
+Write-Host "[1/4] Checking Pandoc (required for Word OMML equations)..." -ForegroundColor Yellow
 
 $hasPandoc = $false
 try {
-    $pandocVer = pandoc --version 2>$null
-    if ($pandocVer) { $hasPandoc = $true }
+    $pandocVer = pandoc --version 2>&1
+    if ($pandocVer -like "*pandoc*") { $hasPandoc = $true }
 } catch {
     $hasPandoc = $false
 }
 
 if (-not $hasPandoc) {
-    # Kiểm tra trong các thư mục thông dụng
+    # Check standard directories
     $commonPandocPaths = @(
         "$env:LOCALAPPDATA\Pandoc\pandoc.exe",
         "C:\Program Files\Pandoc\pandoc.exe",
@@ -59,14 +59,14 @@ if (-not $hasPandoc) {
 }
 
 if ($hasPandoc) {
-    Write-Host "  -> [OK] Pandoc đã sẵn sàng." -ForegroundColor Green
+    Write-Host "  -> [OK] Pandoc is ready." -ForegroundColor Green
 } else {
-    Write-Host "  -> [!] Chưa tìm thấy Pandoc. Đang tiến hành tự động cài đặt..." -ForegroundColor Cyan
+    Write-Host "  -> [!] Pandoc not found. Installing automatically..." -ForegroundColor Cyan
     
     $installed = $false
-    # Cách 1: Dùng winget nếu có
+    # Method 1: Windows Package Manager (winget)
     if (Get-Command winget -ErrorAction SilentlyContinue) {
-        Write-Host "  -> Đang cài đặt Pandoc qua Windows Package Manager (winget)..." -ForegroundColor Gray
+        Write-Host "  -> Installing Pandoc via Windows Package Manager (winget)..." -ForegroundColor Gray
         try {
             winget install -e --id JohnMacFarlane.Pandoc --silent --accept-package-agreements --accept-source-agreements
             Refresh-EnvPath
@@ -76,9 +76,9 @@ if ($hasPandoc) {
         }
     }
 
-    # Cách 2: Tải trực tiếp bản Portable từ GitHub Releases nếu winget không có hoặc lỗi
+    # Method 2: Download official portable release from GitHub if winget is unavailable
     if (-not $installed) {
-        Write-Host "  -> Đang tải trực tiếp gói Pandoc chính thức từ GitHub..." -ForegroundColor Gray
+        Write-Host "  -> Downloading official Pandoc release from GitHub..." -ForegroundColor Gray
         $pandocZipUrl = "https://github.com/jgm/pandoc/releases/download/3.1.11.1/pandoc-3.1.11.1-windows-x86_64.zip"
         $tempZip = "$env:TEMP\pandoc_installer.zip"
         $tempExtract = "$env:TEMP\pandoc_extract"
@@ -102,7 +102,7 @@ if ($hasPandoc) {
                 $installed = $true
             }
         } catch {
-            Write-Host "  -> [CANH BAO] Tải Pandoc tự động thất bại: $_" -ForegroundColor Red
+            Write-Host "  -> [WARNING] Automatic Pandoc download failed: $_" -ForegroundColor Red
         } finally {
             if (Test-Path $tempZip) { Remove-Item $tempZip -Force -ErrorAction SilentlyContinue }
             if (Test-Path $tempExtract) { Remove-Item $tempExtract -Recurse -Force -ErrorAction SilentlyContinue }
@@ -110,71 +110,101 @@ if ($hasPandoc) {
     }
 
     if ($installed -or (Get-Command pandoc -ErrorAction SilentlyContinue)) {
-        Write-Host "  -> [OK] Đã cài đặt Pandoc thành công!" -ForegroundColor Green
+        Write-Host "  -> [OK] Pandoc installed successfully!" -ForegroundColor Green
     } else {
-        Write-Host "  -> [CHÚ Ý] Không thể tự động cài Pandoc. Bạn có thể cài thủ công từ: https://pandoc.org/installing.html" -ForegroundColor Red
+        Write-Host "  -> [NOTE] Could not install Pandoc automatically. You can install it manually from: https://pandoc.org/installing.html" -ForegroundColor Red
     }
 }
 Write-Host ""
 
 # ------------------------------------------------------------------------------
-# 2. KIỂM TRA VÀ CÀI ĐẶT PYTHON (FastAPI & Xử lý tài liệu Word)
+# 2. CHECK AND INSTALL PYTHON (FastAPI & Document Engine)
 # ------------------------------------------------------------------------------
-Write-Host "[2/4] Kiểm tra Python (phiên bản 3.10 trở lên)..." -ForegroundColor Yellow
+Write-Host "[2/4] Checking Python (version 3.10 or higher)..." -ForegroundColor Yellow
 
-$hasPython = $false
-$pythonCmd = "python"
+$pythonExe = ""
+$pythonArgs = @()
 
-try {
-    $pyVer = python --version 2>$null
-    if ($pyVer -like "*Python 3.*") {
-        $hasPython = $true
-    }
-} catch {
-    $hasPython = $false
-}
-
-if (-not $hasPython) {
+function Test-PythonExecutable($exe, $extraArgs = @()) {
     try {
-        $pyVer = py -3 --version 2>$null
-        if ($pyVer -like "*Python 3.*") {
-            $hasPython = $true
-            $pythonCmd = "py -3"
+        $cmd = if ($extraArgs.Count -gt 0) { "$exe $($extraArgs -join ' ')" } else { $exe }
+        $verStr = if ($extraArgs.Count -gt 0) { & $exe $extraArgs --version 2>&1 } else { & $exe --version 2>&1 }
+        if ($verStr -match "Python 3\.(\d+)") {
+            $minor = [int]$matches[1]
+            if ($minor -ge 10) {
+                return $true
+            }
         }
-    } catch {
-        $hasPython = $false
+    } catch {}
+    return $false
+}
+
+# 1. Test "python" in PATH
+if (Test-PythonExecutable "python") {
+    $pythonExe = "python"
+}
+
+# 2. Test "py -3" launcher
+if (-not $pythonExe) {
+    if (Get-Command py.exe -ErrorAction SilentlyContinue) {
+        if (Test-PythonExecutable "py" @("-3")) {
+            try {
+                $resolved = py -3 -c "import sys; print(sys.executable)" 2>&1
+                if ($resolved -and (Test-Path $resolved.Trim())) {
+                    $pythonExe = $resolved.Trim()
+                } else {
+                    $pythonExe = "py"
+                    $pythonArgs = @("-3")
+                }
+            } catch {
+                $pythonExe = "py"
+                $pythonArgs = @("-3")
+            }
+        }
     }
 }
 
-if (-not $hasPython) {
-    # Quét các thư mục cài đặt Python thông dụng
+# 3. Test common installation paths
+if (-not $pythonExe) {
     $commonPyPaths = @(
+        "$env:LOCALAPPDATA\Programs\Python\Python313\python.exe",
         "$env:LOCALAPPDATA\Programs\Python\Python312\python.exe",
         "$env:LOCALAPPDATA\Programs\Python\Python311\python.exe",
         "$env:LOCALAPPDATA\Programs\Python\Python310\python.exe",
+        "C:\Program Files\Python313\python.exe",
         "C:\Program Files\Python312\python.exe",
         "C:\Program Files\Python311\python.exe",
         "C:\Program Files\Python310\python.exe"
     )
     foreach ($p in $commonPyPaths) {
         if (Test-Path $p) {
-            $hasPython = $true
-            $pyDir = Split-Path -Parent $p
-            $env:Path = "$pyDir;$pyDir\Scripts;$env:Path"
-            $pythonCmd = $p
-            break
+            if (Test-PythonExecutable $p) {
+                $pythonExe = $p
+                $pyDir = Split-Path -Parent $p
+                $env:Path = "$pyDir;$pyDir\Scripts;$env:Path"
+                break
+            }
         }
     }
 }
 
-if ($hasPython) {
-    Write-Host "  -> [OK] Python đã sẵn sàng: $(& $pythonCmd --version)" -ForegroundColor Green
+function Invoke-Python([string[]]$cmdArgs) {
+    if ($pythonArgs.Count -gt 0) {
+        & $pythonExe ($pythonArgs + $cmdArgs)
+    } else {
+        & $pythonExe $cmdArgs
+    }
+}
+
+if ($pythonExe) {
+    $ver = (Invoke-Python @("--version")) 2>&1
+    Write-Host "  -> [OK] Python is ready: $ver ($pythonExe)" -ForegroundColor Green
 } else {
-    Write-Host "  -> [!] Chưa tìm thấy Python. Đang tiến hành cài đặt Python 3.11 tự động..." -ForegroundColor Cyan
+    Write-Host "  -> [!] Python 3.10+ not found. Installing Python 3.11 automatically..." -ForegroundColor Cyan
     
     $pyInstalled = $false
     if (Get-Command winget -ErrorAction SilentlyContinue) {
-        Write-Host "  -> Đang cài đặt Python qua winget..." -ForegroundColor Gray
+        Write-Host "  -> Installing Python 3.11 via winget..." -ForegroundColor Gray
         try {
             winget install -e --id Python.Python.3.11 --silent --accept-package-agreements --accept-source-agreements
             Refresh-EnvPath
@@ -185,57 +215,63 @@ if ($hasPython) {
     }
 
     if (-not $pyInstalled) {
-        Write-Host "  -> Đang tải bản cài đặt Python chính thức từ python.org..." -ForegroundColor Gray
+        Write-Host "  -> Downloading official Python installer from python.org..." -ForegroundColor Gray
         $pyUrl = "https://www.python.org/ftp/python/3.11.9/python-3.11.9-amd64.exe"
         $pyInstaller = "$env:TEMP\python_installer.exe"
         try {
             [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
             Invoke-WebRequest -Uri $pyUrl -OutFile $pyInstaller -UseBasicParsing
-            Write-Host "  -> Đang cài đặt Python (chế độ nền)..." -ForegroundColor Gray
+            Write-Host "  -> Running silent installation..." -ForegroundColor Gray
             Start-Process -FilePath $pyInstaller -ArgumentList "/quiet InstallAllUsers=0 PrependPath=1 Include_test=0 SimpleInstall=1" -Wait
             Refresh-EnvPath
             $pyInstalled = $true
         } catch {
-            Write-Host "  -> [LOI] Tải và cài đặt Python thất bại: $_" -ForegroundColor Red
+            Write-Host "  -> [ERROR] Failed to download/install Python: $_" -ForegroundColor Red
         } finally {
             if (Test-Path $pyInstaller) { Remove-Item $pyInstaller -Force -ErrorAction SilentlyContinue }
         }
     }
 
     Refresh-EnvPath
-    if (Get-Command python -ErrorAction SilentlyContinue) {
-        $pythonCmd = "python"
-        Write-Host "  -> [OK] Đã cài đặt Python thành công!" -ForegroundColor Green
+    if (Test-PythonExecutable "python") {
+        $pythonExe = "python"
+        $pythonArgs = @()
+        Write-Host "  -> [OK] Python installed successfully!" -ForegroundColor Green
     } else {
-        Write-Host "  -> [LƯU Ý] Nếu vừa cài xong Python, vui lòng đóng cửa sổ này và mở lại để Windows nhận diện PATH." -ForegroundColor Yellow
+        Write-Host "  -> [NOTE] If Python was just installed, please restart your terminal so Windows recognizes PATH." -ForegroundColor Yellow
     }
 }
 Write-Host ""
 
 # ------------------------------------------------------------------------------
-# 3. CÀI ĐẶT THƯ VIỆN PYTHON (backend/requirements.txt)
+# 3. INSTALL PYTHON LIBRARIES (FastAPI, python-docx, uvicorn...)
 # ------------------------------------------------------------------------------
-Write-Host "[3/4] Cài đặt các thư viện Python cần thiết..." -ForegroundColor Yellow
-try {
-    Write-Host "  -> Đang cập nhật pip và cài đặt FastAPI, python-docx, uvicorn, beautifulsoup4..." -ForegroundColor Gray
-    & $pythonCmd -m pip install --upgrade pip --quiet
-    & $pythonCmd -m pip install -r "$projectRoot\backend\requirements.txt" --quiet
-    Write-Host "  -> [OK] Đã cài đặt đầy đủ các thư viện Python!" -ForegroundColor Green
-} catch {
-    Write-Host "  -> [CANH BAO] Có lỗi nhỏ khi chạy pip, kiểm tra lại: $_" -ForegroundColor Yellow
+Write-Host "[3/4] Installing Python requirements (FastAPI, python-docx, uvicorn...)..." -ForegroundColor Yellow
+if ($pythonExe) {
+    try {
+        Write-Host "  -> Updating pip..." -ForegroundColor Gray
+        Invoke-Python @("-m", "pip", "install", "--upgrade", "pip", "--quiet")
+        Write-Host "  -> Installing packages from backend/requirements.txt..." -ForegroundColor Gray
+        Invoke-Python @("-m", "pip", "install", "-r", "$projectRoot\backend\requirements.txt", "--quiet")
+        Write-Host "  -> [OK] Python libraries installed successfully!" -ForegroundColor Green
+    } catch {
+        Write-Host "  -> [WARNING] pip returned an error: $_" -ForegroundColor Yellow
+    }
+} else {
+    Write-Host "  -> [SKIP] Python is not yet available to install libraries." -ForegroundColor Red
 }
 Write-Host ""
 
 # ------------------------------------------------------------------------------
-# 4. KIỂM TRA BẢN BUILD GIAO DIỆN FRONTEND (Web UI)
+# 4. VERIFY FRONTEND WEB UI BUNDLE
 # ------------------------------------------------------------------------------
-Write-Host "[4/4] Kiểm tra giao diện người dùng (Frontend)..." -ForegroundColor Yellow
+Write-Host "[4/4] Verifying Frontend Web UI..." -ForegroundColor Yellow
 
 $distIndex = "$projectRoot\frontend\dist\index.html"
 if (Test-Path $distIndex) {
-    Write-Host "  -> [OK] Giao diện người dùng đã được biên dịch sẵn sàng." -ForegroundColor Green
+    Write-Host "  -> [OK] Frontend web bundle is ready and pre-built (no Node.js required)." -ForegroundColor Green
 } else {
-    Write-Host "  -> [!] Chưa có bản build giao diện. Đang kiểm tra Node.js để biên dịch..." -ForegroundColor Cyan
+    Write-Host "  -> [!] Pre-built frontend not found. Checking Node.js to build..." -ForegroundColor Cyan
     $hasNode = $false
     try {
         if (Get-Command npm -ErrorAction SilentlyContinue) { $hasNode = $true }
@@ -245,39 +281,38 @@ if (Test-Path $distIndex) {
 
     if (-not $hasNode) {
         if (Get-Command winget -ErrorAction SilentlyContinue) {
-            Write-Host "  -> Đang cài đặt Node.js LTS qua winget..." -ForegroundColor Gray
+            Write-Host "  -> Installing Node.js LTS via winget..." -ForegroundColor Gray
             winget install -e --id OpenJS.NodeJS.LTS --silent --accept-package-agreements --accept-source-agreements
             Refresh-EnvPath
         }
     }
 
     if (Get-Command npm -ErrorAction SilentlyContinue) {
-        Write-Host "  -> Đang cài đặt thư viện frontend và biên dịch..." -ForegroundColor Gray
+        Write-Host "  -> Building frontend assets..." -ForegroundColor Gray
         Push-Location "$projectRoot\frontend"
         npm install --quiet
         npm run build
         Pop-Location
-        Write-Host "  -> [OK] Biên dịch giao diện hoàn tất!" -ForegroundColor Green
+        Write-Host "  -> [OK] Frontend build completed!" -ForegroundColor Green
     } else {
-        Write-Host "  -> [CANH BAO] Chưa tìm thấy Node.js. Bạn có thể cài đặt Node.js từ https://nodejs.org" -ForegroundColor Yellow
+        Write-Host "  -> [WARNING] Node.js not found. Please install Node.js from https://nodejs.org" -ForegroundColor Yellow
     }
 }
 Write-Host ""
 
 # ------------------------------------------------------------------------------
-# TỔNG KẾT & KHỞI ĐỘNG
+# SUMMARY & LAUNCH PROMPT
 # ------------------------------------------------------------------------------
 Write-Host "======================================================================" -ForegroundColor Green
-Write-Host "         CHÚC MỪNG! HỆ THỐNG ĐÃ ĐƯỢC THIẾT LẬP HOÀN TẤT               " -ForegroundColor Green
+Write-Host "              SETUP COMPLETED SUCCESSFULLY!                           " -ForegroundColor Green
 Write-Host "======================================================================" -ForegroundColor Green
 Write-Host ""
-Write-Host "Từ bây giờ, trên bất kỳ máy Windows nào, bạn chỉ cần nhấp đúp vào:" -ForegroundColor White
+Write-Host "You can now launch DocxMath Studio anytime by double-clicking:" -ForegroundColor White
 Write-Host "  -> run_windows.bat" -ForegroundColor Cyan
-Write-Host "để khởi động DocxMath Studio và tự động mở trên trình duyệt." -ForegroundColor White
 Write-Host ""
 
-$answer = Read-Host "Bạn có muốn khởi động DocxMath Studio ngay bây giờ không? (Y/N)"
+$answer = Read-Host "Would you like to start DocxMath Studio now? (Y/N)"
 if ($answer -eq 'Y' -or $answer -eq 'y' -or $answer -eq '') {
-    Write-Host "Đang khởi động ứng dụng..." -ForegroundColor Cyan
+    Write-Host "Starting DocxMath Studio..." -ForegroundColor Cyan
     Start-Process -FilePath "$projectRoot\run_windows.bat"
 }
