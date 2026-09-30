@@ -74,27 +74,45 @@ flowchart TD
 
 ## 🚀 Hướng Dẫn Cài Đặt & Chạy Ứng Dụng
 
-### Cách 1: Chạy bằng Docker Compose (Khuyên dùng - Nhanh nhất)
+### Cách 1: Tự động 1-Click trên Windows (Khuyên dùng - Không cần Docker)
 
-Chỉ cần cài đặt Docker Desktop, toàn bộ môi trường (Pandoc, Python, Node, Frontend) sẽ được đóng gói tự động:
+Trên bất kỳ máy tính Windows nào (Windows 10/11), bạn **không cần cài Docker hay WSL**:
+
+1. **Cài đặt tự động môi trường (chỉ cần chạy 1 lần)**:
+   - Nhấp đúp chuột vào file:
+     ```
+     cai_dat_windows.bat
+     ```
+   - Script sẽ **tự động kiểm tra và cài đặt**:
+     - Pandoc (xử lý công thức Word Equation OMML)
+     - Python 3.10+ (nếu máy chưa có)
+     - Các thư viện Python cần thiết (`fastapi`, `python-docx`, `uvicorn`...)
+     - Kiểm tra và biên dịch sẵn sàng giao diện người dùng.
+
+2. **Khởi chạy ứng dụng**:
+   - Nhấp đúp chuột vào file:
+     ```
+     run_windows.bat
+     ```
+   - Ứng dụng sẽ tự động khởi động và tự động mở trình duyệt web tại `http://localhost:8000`.
+
+---
+
+### Cách 2: Chạy bằng Docker Compose (Dành cho máy Linux/Server hoặc máy có Docker Desktop)
+
+Nếu máy đã có sẵn Docker Desktop và WSL 2:
 
 ```bash
-# 1. Sao chép file cấu hình
-cp .env.example .env
-
-# (Tùy chọn) Điền DEEPSEEK_API_KEY vào file .env nếu muốn dùng tính năng AI
-# DEEPSEEK_API_KEY=sk-...
-
-# 2. Khởi chạy Docker Compose
+# 1. Khởi chạy Docker Compose
 docker compose up -d --build
 
-# 3. Mở trình duyệt Chrome truy cập:
+# 2. Mở trình duyệt Chrome truy cập:
 # http://localhost:8000
 ```
 
 ---
 
-### Cách 2: Chạy thủ công trên Windows 11
+### Cách 3: Chạy thủ công từng bước
 
 1. **Cài đặt Pandoc** (nếu chưa có):
    ```powershell

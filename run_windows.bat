@@ -1,70 +1,68 @@
 @echo off
 chcp 65001 >nul
 title DocxMath Studio - Dang Chay Tren Cong 8000
+set "SCRIPT_DIR=%~dp0"
+cd /d "%SCRIPT_DIR%"
+
 echo ==========================================================
 echo        DocxMath Studio - Word Equation (OMML) Tool
 echo ==========================================================
 echo.
 
-set "SCRIPT_DIR=%~dp0"
-cd /d "%SCRIPT_DIR%"
+REM 1. Cap nhat PATH he thong
+set "PATH=%LOCALAPPDATA%\Pandoc;C:\Program Files\Pandoc;%LOCALAPPDATA%\Programs\Python\Python312;%LOCALAPPDATA%\Programs\Python\Python311;%LOCALAPPDATA%\Programs\Python\Python310;C:\Program Files\Python312;C:\Program Files\Python311;C:\Program Files\Python310;%PATH%"
 
-REM 1. Kiem tra Python
+REM 2. Kiem tra Python
 python --version >nul 2>&1
 if errorlevel 1 (
-    echo [LOI] Khong tim thay Python tren he thong!
-    echo Vui long cai dat Python 3.10+ tu https://www.python.org/
-    echo - Luu y quan trong: Nho tich chon "Add Python to PATH" khi cai dat.
-    echo.
-    pause
-    exit /b 1
+    py -3 --version >nul 2>&1
+    if errorlevel 1 (
+        echo [!] Chua tim thay Python hoac moi truong chua duoc thiet lap.
+        echo Dang tu dong khoi chay trinh cai dat moi truong tu dong...
+        echo.
+        call "%SCRIPT_DIR%cai_dat_windows.bat"
+        exit /b 0
+    )
 )
 
-REM 2. Cap nhat PATH de tim Pandoc neu duoc cai vao AppData
-set "PATH=%LOCALAPPDATA%\Pandoc;C:\Program Files\Pandoc;%PATH%"
-
-REM Kiem tra Pandoc
+REM 3. Kiem tra Pandoc
 pandoc --version >nul 2>&1
 if errorlevel 1 (
-    echo [CANH BAO] Khong tim thay Pandoc trong PATH!
-    echo Ban co the cai dat Pandoc bang lenh: winget install JohnMacFarlane.Pandoc
+    echo [!] Chua tim thay Pandoc tren may.
+    echo Dang tu dong khoi chay trinh cai dat moi truong...
     echo.
-) else (
-    echo [OK] Pandoc da san sang.
-)
-
-REM 3. Kiem tra va cai dat thu vien Python
-echo.
-echo [1/3] Kiem tra thu vien Python can thiet...
-python -m pip install -r backend\requirements.txt --quiet
-if errorlevel 1 (
-    echo [CANH BAO] Co loi khi cai dat thu vien Python qua pip. Dang thu tiep tuc...
+    call "%SCRIPT_DIR%cai_dat_windows.bat"
+    exit /b 0
 )
 
 REM 4. Kiem tra ban bien dich Frontend
-echo [2/3] Kiem tra giao dien nguoi dung...
 if not exist "frontend\dist\index.html" (
-    echo [!] Chua tim thay ban build frontend. Dang tien hanh bien dich...
-    cd frontend
-    call npm install --quiet
-    call npm run build
-    cd ..
-) else (
-    echo [OK] Ban bien dich frontend da san sang.
+    echo [!] Chua tim thay ban build giao dien nguoi dung.
+    echo Dang tien hanh cai dat va bien dich...
+    call "%SCRIPT_DIR%cai_dat_windows.bat"
+    exit /b 0
 )
 
-REM 5. Khoi dong FastAPI Server
+REM 5. Kiem tra nhanh thu vien Python
+python -c "import fastapi, docx, uvicorn" >nul 2>&1
+if errorlevel 1 (
+    echo [!] Dang cai dat bo sung cac thu vien Python con thieu...
+    python -m pip install -r backend\requirements.txt --quiet
+)
+
+REM 6. Khoi dong FastAPI Server va mo trinh duyet
 echo.
-echo [3/3] Dang khoi dong may chu tai http://localhost:8000 ...
+echo [OK] Tat ca thanh phan da san sang!
+echo Dang khoi dong may chu tai http://localhost:8000 ...
 echo ==========================================================
-echo  Trinh duyet se tu dong mo trang web.
-echo  De tat may chu, vui long nhan Ctrl+C trong cua so nay.
+echo  Trinh duyet web se tu dong mo ung dung.
+echo  De tat ung dung, vui long nhan Ctrl+C trong cua so nay.
 echo ==========================================================
 echo.
 
 set "PYTHONPATH=%SCRIPT_DIR%backend;%SCRIPT_DIR%"
 
-REM Mo trinh duyet sau khi khoi dong
+REM Mo trinh duyet
 start "" "http://localhost:8000"
 
 REM Chay Uvicorn truc tiep
