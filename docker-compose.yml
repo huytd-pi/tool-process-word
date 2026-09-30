@@ -13,4 +13,5 @@ services:
       - DEEPSEEK_MODEL=${DEEPSEEK_MODEL:-deepseek-chat}
       - PANDOC_PATH=/usr/bin/pandoc
     env_file:
-      - .env
+      - path: .env
+        required: false
