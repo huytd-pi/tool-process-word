@@ -297,3 +297,42 @@ EndFragment:0000000220
     assert "StartFragment" not in data["markdown"]
     assert "EndFragment" not in data["markdown"]
     assert data["markdown"].startswith("Chất lỏng màu xanh")
+
+@pytest.mark.asyncio
+async def test_latex_conversion_and_export():
+    """
+    Test Case: LaTeX generation and export endpoints.
+    Verifies that Markdown with complex math and Vietnamese is converted
+    into clean, compilable LaTeX.
+    """
+    md_content = """# Tiêu Đề Bài Báo
+
+Đây là công thức Einstein $E = mc^2$ và phương trình tích phân:
+
+$$
+\\int_{-\\infty}^{+\\infty} e^{-x^2} dx = \\sqrt{\\pi}
+$$
+"""
+    # 1. Test convert-latex (standalone)
+    resp = client.post("/api/convert-latex", json={"markdown": md_content, "standalone": True})
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "latex" in data
+    assert "\\documentclass" in data["latex"]
+    assert "E = mc^2" in data["latex"] or "mc" in data["latex"]
+    assert "\\sqrt{\\pi}" in data["latex"] or "pi" in data["latex"]
+    assert "\\begin{document}" in data["latex"]
+
+    # 2. Test convert-latex (snippet)
+    resp_snip = client.post("/api/convert-latex", json={"markdown": md_content, "standalone": False})
+    assert resp_snip.status_code == 200
+    data_snip = resp_snip.json()
+    assert "\\documentclass" not in data_snip["latex"]
+    assert "section" in data_snip["latex"]
+
+    # 3. Test export-latex (downloadable file)
+    resp_exp = client.post("/api/export-latex", json={"markdown": md_content, "standalone": True})
+    assert resp_exp.status_code == 200
+    assert "attachment" in resp_exp.headers.get("Content-Disposition", "")
+    assert ".tex" in resp_exp.headers.get("Content-Disposition", "")
+    assert len(resp_exp.content) > 0

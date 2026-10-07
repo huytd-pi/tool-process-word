@@ -11,6 +11,7 @@ import {
   parseHtml,
   sanitizeText,
   convertToDocx,
+  exportLatex,
   uploadDocumentFile
 } from './services/api';
 
@@ -157,6 +158,38 @@ export const App: React.FC = () => {
     }
   };
 
+  const [isExportingLatex, setIsExportingLatex] = useState<boolean>(false);
+
+  // 3b. Xuất file LaTeX (.tex)
+  const handleExportLatex = async (standalone: boolean = true) => {
+    if (!processedMarkdown.trim()) {
+      alert('Vui lòng chuẩn hóa hoặc nhập nội dung trước khi xuất LaTeX.');
+      return;
+    }
+
+    setIsExportingLatex(true);
+    try {
+      let customFilename = settings.custom_filename || settings.document_title || 'document';
+      customFilename = customFilename.replace(/\.docx$/i, '');
+      if (!customFilename.endsWith('.tex')) customFilename += '.tex';
+
+      const { blob, filename } = await exportLatex(processedMarkdown, standalone, customFilename);
+
+      const downloadUrl = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = downloadUrl;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(downloadUrl);
+    } catch (err: any) {
+      alert(`Lỗi khi xuất file LaTeX: ${err.message}`);
+    } finally {
+      setIsExportingLatex(false);
+    }
+  };
+
   // 4. File upload
   const handleFileUpload = async (file: File) => {
     try {
@@ -220,6 +253,8 @@ export const App: React.FC = () => {
           blocks={blocks}
           onExportDocx={handleExportDocx}
           isExporting={isExporting}
+          onExportLatex={handleExportLatex}
+          isExportingLatex={isExportingLatex}
           warningsCount={warnings.length}
         />
       </main>

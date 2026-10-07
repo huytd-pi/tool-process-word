@@ -13,7 +13,9 @@ from .schemas import (
     NormalizeRequest,
     NormalizeResponse,
     HealthResponse,
-    DocumentSettings
+    DocumentSettings,
+    LatexConvertRequest,
+    LatexConvertResponse
 )
 from .html_parser import html_parser
 from .math_sanitizer import math_sanitizer
@@ -147,6 +149,59 @@ async def convert_endpoint(req: ConvertRequest):
     return Response(
         content=docx_bytes,
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        headers=headers
+    )
+
+@app.post("/api/convert-latex", response_model=LatexConvertResponse)
+async def convert_latex_endpoint(req: LatexConvertRequest):
+    md_text = req.markdown.strip()
+    if not md_text:
+        return LatexConvertResponse(latex="", filename="document.tex", warnings=[])
+
+    try:
+        latex_str, warnings, safe_filename = await docx_converter.convert_markdown_to_latex(
+            md_text,
+            standalone=req.standalone,
+            custom_filename=req.custom_filename or ""
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Lỗi chuyển đổi LaTeX: {str(e)}")
+
+    return LatexConvertResponse(
+        latex=latex_str,
+        filename=safe_filename,
+        warnings=warnings
+    )
+
+@app.post("/api/export-latex")
+async def export_latex_endpoint(req: LatexConvertRequest):
+    md_text = req.markdown.strip()
+    if not md_text:
+        raise HTTPException(status_code=400, detail="Nội dung markdown không được để trống")
+
+    try:
+        latex_str, warnings, safe_filename = await docx_converter.convert_markdown_to_latex(
+            md_text,
+            standalone=req.standalone,
+            custom_filename=req.custom_filename or ""
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Lỗi xuất file LaTeX: {str(e)}")
+
+    encoded_filename = urllib.parse.quote(safe_filename)
+    ascii_filename = re.sub(r'[^\x20-\x7E]+', '_', safe_filename).replace('"', '')
+    if not ascii_filename.endswith(".tex"):
+        ascii_filename += ".tex"
+
+    headers = {
+        "Content-Disposition": f'attachment; filename="{ascii_filename}"; filename*=UTF-8\'\'{encoded_filename}',
+        "X-Warnings-Count": str(len(warnings)),
+        "X-Suggested-Filename": encoded_filename
+    }
+
+    return Response(
+        content=latex_str.encode("utf-8"),
+        media_type="application/x-tex; charset=utf-8",
         headers=headers
     )
 

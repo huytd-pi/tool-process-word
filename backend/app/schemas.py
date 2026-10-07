@@ -60,3 +60,13 @@ class HealthResponse(BaseModel):
     pandoc_path: str
     deepseek_configured: bool
     deepseek_model: str
+
+class LatexConvertRequest(BaseModel):
+    markdown: str
+    standalone: bool = True
+    custom_filename: Optional[str] = None
+
+class LatexConvertResponse(BaseModel):
+    latex: str
+    filename: str
+    warnings: List[WarningItem] = Field(default_factory=list)

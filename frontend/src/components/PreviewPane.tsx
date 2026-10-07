@@ -1,17 +1,21 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   Eye,
+  FileCode,
   Edit3,
   Layers,
   Copy,
   Check,
   FileDown,
   Sigma,
-  AlertCircle
+  AlertCircle,
+  Download,
+  RefreshCw
 } from 'lucide-react';
 import { marked } from 'marked';
 import katex from 'katex';
 import type { BlockItem } from '../types';
+import { convertToLatex } from '../services/api';
 
 interface PreviewPaneProps {
   processedMarkdown: string;
@@ -19,7 +23,80 @@ interface PreviewPaneProps {
   blocks: BlockItem[];
   onExportDocx: () => void;
   isExporting: boolean;
+  onExportLatex: (standalone?: boolean) => void;
+  isExportingLatex: boolean;
   warningsCount: number;
+}
+
+// Client-side quick LaTeX fallback generator
+function simpleMarkdownToLatex(md: string, standalone: boolean = true): string {
+  if (!md.trim()) return '';
+
+  const lines = md.split('\n');
+  const bodyLines: string[] = [];
+  let inCode = false;
+
+  for (const line of lines) {
+    if (line.startsWith('```')) {
+      if (!inCode) {
+        inCode = true;
+        bodyLines.push('\\begin{verbatim}');
+      } else {
+        inCode = false;
+        bodyLines.push('\\end{verbatim}');
+      }
+      continue;
+    }
+
+    if (inCode) {
+      bodyLines.push(line);
+      continue;
+    }
+
+    // Headings
+    if (/^#\s+(.+)$/.test(line)) {
+      bodyLines.push(`\\section{${line.replace(/^#\s+/, '')}}`);
+    } else if (/^##\s+(.+)$/.test(line)) {
+      bodyLines.push(`\\subsection{${line.replace(/^##\s+/, '')}}`);
+    } else if (/^###\s+(.+)$/.test(line)) {
+      bodyLines.push(`\\subsubsection{${line.replace(/^###\s+/, '')}}`);
+    } else if (/^####\s+(.+)$/.test(line)) {
+      bodyLines.push(`\\paragraph{${line.replace(/^####\s+/, '')}}`);
+    } else if (/^>\s+(.+)$/.test(line)) {
+      bodyLines.push(`\\begin{quote}\n${line.replace(/^>\s+/, '')}\n\\end{quote}`);
+    } else if (/^\s*-\s+(.+)$/.test(line)) {
+      bodyLines.push(`\\item ${line.replace(/^\s*-\s+/, '')}`);
+    } else if (line.trim().startsWith('$$') && line.trim().endsWith('$$')) {
+      bodyLines.push(`\\[\n${line.trim().slice(2, -2).trim()}\n\\]`);
+    } else {
+      let l = line.replace(/\*\*([^*]+)\*\*/g, '\\textbf{$1}');
+      l = l.replace(/\*([^*]+)\*/g, '\\textit{$1}');
+      bodyLines.push(l);
+    }
+  }
+
+  const body = bodyLines.join('\n');
+  if (!standalone) return body;
+
+  return `\\documentclass{article}
+\\usepackage[utf8]{inputenc}
+\\usepackage[vietnamese]{babel}
+\\usepackage{amsmath,amssymb,amsfonts}
+\\usepackage{graphicx}
+\\usepackage{hyperref}
+\\usepackage{geometry}
+\\geometry{a4paper, margin=2.54cm}
+
+\\title{Document}
+\\date{\\today}
+
+\\begin{document}
+\\maketitle
+
+${body}
+
+\\end{document}
+`;
 }
 
 export const PreviewPane: React.FC<PreviewPaneProps> = ({
@@ -28,10 +105,40 @@ export const PreviewPane: React.FC<PreviewPaneProps> = ({
   blocks,
   onExportDocx,
   isExporting,
+  onExportLatex,
+  isExportingLatex,
   warningsCount
 }) => {
-  const [activeTab, setActiveTab] = useState<'preview' | 'edit' | 'blocks'>('preview');
-  const [copied, setCopied] = useState(false);
+  const [activeTab, setActiveTab] = useState<'preview' | 'latex' | 'edit' | 'blocks'>('preview');
+  const [copiedMarkdown, setCopiedMarkdown] = useState(false);
+  const [copiedLatex, setCopiedLatex] = useState(false);
+  const [isStandaloneLatex, setIsStandaloneLatex] = useState(true);
+  const [latexCode, setLatexCode] = useState('');
+  const [isLoadingLatex, setIsLoadingLatex] = useState(false);
+
+  // Load LaTeX from backend or fallback when needed
+  const fetchLatex = async (standalone: boolean) => {
+    if (!processedMarkdown.trim()) {
+      setLatexCode('');
+      return;
+    }
+    setIsLoadingLatex(true);
+    try {
+      const res = await convertToLatex(processedMarkdown, standalone);
+      setLatexCode(res.latex);
+    } catch (e: any) {
+      console.warn('Backend LaTeX conversion failed, fallback used:', e);
+      setLatexCode(simpleMarkdownToLatex(processedMarkdown, standalone));
+    } finally {
+      setIsLoadingLatex(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === 'latex') {
+      fetchLatex(isStandaloneLatex);
+    }
+  }, [activeTab, isStandaloneLatex, processedMarkdown]);
 
   // Render markdown with KaTeX math formula preservation
   const renderedHtml = useMemo(() => {
@@ -113,7 +220,7 @@ export const PreviewPane: React.FC<PreviewPaneProps> = ({
       return placeholder;
     });
 
-    // 3. Render markdown through marked
+    // 5. Render markdown through marked
     let html = '';
     try {
       html = marked.parse(text, { async: false, gfm: true, breaks: false }) as string;
@@ -121,7 +228,7 @@ export const PreviewPane: React.FC<PreviewPaneProps> = ({
       html = `<div class="preview-error">Lỗi hiển thị Markdown: ${e.message}</div>`;
     }
 
-    // 4. Restore KaTeX equations
+    // 6. Restore KaTeX equations
     Object.keys(mathMap).forEach((placeholder) => {
       html = html.replace(new RegExp(placeholder, 'g'), mathMap[placeholder]);
     });
@@ -131,8 +238,15 @@ export const PreviewPane: React.FC<PreviewPaneProps> = ({
 
   const handleCopyMarkdown = () => {
     navigator.clipboard.writeText(processedMarkdown);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    setCopiedMarkdown(true);
+    setTimeout(() => setCopiedMarkdown(false), 2000);
+  };
+
+  const handleCopyLatex = () => {
+    const textToCopy = latexCode || simpleMarkdownToLatex(processedMarkdown, isStandaloneLatex);
+    navigator.clipboard.writeText(textToCopy);
+    setCopiedLatex(true);
+    setTimeout(() => setCopiedLatex(false), 2000);
   };
 
   // Count math equations
@@ -162,13 +276,23 @@ export const PreviewPane: React.FC<PreviewPaneProps> = ({
           <button
             className={`tab-btn ${activeTab === 'preview' ? 'tab-active' : ''}`}
             onClick={() => setActiveTab('preview')}
+            title="Xem hiển thị văn bản mô phỏng Word"
           >
             <Eye size={14} />
             <span>Xem Trực Quan</span>
           </button>
           <button
+            className={`tab-btn ${activeTab === 'latex' ? 'tab-active' : ''}`}
+            onClick={() => setActiveTab('latex')}
+            title="Xem và sao chép mã nguồn LaTeX chuẩn"
+          >
+            <FileCode size={14} />
+            <span>Mã LaTeX</span>
+          </button>
+          <button
             className={`tab-btn ${activeTab === 'edit' ? 'tab-active' : ''}`}
             onClick={() => setActiveTab('edit')}
+            title="Chỉnh sửa mã nguồn Markdown"
           >
             <Edit3 size={14} />
             <span>Sửa Markdown</span>
@@ -176,6 +300,7 @@ export const PreviewPane: React.FC<PreviewPaneProps> = ({
           <button
             className={`tab-btn ${activeTab === 'blocks' ? 'tab-active' : ''}`}
             onClick={() => setActiveTab('blocks')}
+            title="Xem cấu trúc các khối tài liệu JSON"
           >
             <Layers size={14} />
             <span>Khối ({blocks.length})</span>
@@ -185,19 +310,50 @@ export const PreviewPane: React.FC<PreviewPaneProps> = ({
 
       {/* Pane Toolbar */}
       <div className="pane-toolbar">
-        <div className="toolbar-left">
+        <div className="toolbar-left" style={{ display: 'flex', gap: '8px' }}>
           <button
             className="btn-tool"
             onClick={handleCopyMarkdown}
             disabled={!processedMarkdown.trim()}
             title="Sao chép Markdown đã xử lý vào clipboard"
           >
-            {copied ? <Check size={14} className="text-emerald" /> : <Copy size={14} />}
-            <span>{copied ? 'Đã Sao Chép!' : 'Sao Chép Markdown'}</span>
+            {copiedMarkdown ? <Check size={14} className="text-emerald" /> : <Copy size={14} />}
+            <span>{copiedMarkdown ? 'Đã Sao Chép!' : 'Sao Chép Markdown'}</span>
+          </button>
+
+          <button
+            className="btn-tool"
+            onClick={handleCopyLatex}
+            disabled={!processedMarkdown.trim()}
+            title="Sao chép mã nguồn LaTeX vào clipboard"
+          >
+            {copiedLatex ? <Check size={14} className="text-emerald" /> : <Copy size={14} />}
+            <span>{copiedLatex ? 'Đã Sao Chép LaTeX!' : 'Sao Chép LaTeX'}</span>
           </button>
         </div>
 
-        <div className="toolbar-right">
+        <div className="toolbar-right" style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+          {/* Export LaTeX */}
+          <button
+            className="btn-export-latex"
+            onClick={() => onExportLatex(isStandaloneLatex)}
+            disabled={!processedMarkdown.trim() || isExportingLatex}
+            title="Xuất tài liệu dưới dạng file LaTeX (.tex)"
+          >
+            {isExportingLatex ? (
+              <>
+                <RefreshCw size={15} className="spin" />
+                <span>Đang Xuất .tex...</span>
+              </>
+            ) : (
+              <>
+                <Download size={15} />
+                <span>Xuất LaTeX (.tex)</span>
+              </>
+            )}
+          </button>
+
+          {/* Export Word */}
           <button
             className="btn-export-primary"
             onClick={onExportDocx}
@@ -206,7 +362,7 @@ export const PreviewPane: React.FC<PreviewPaneProps> = ({
           >
             {isExporting ? (
               <>
-                <span className="spinner-sm spinner-white" />
+                <RefreshCw size={16} className="spin" />
                 <span>Đang Tạo File Word...</span>
               </>
             ) : (
@@ -221,6 +377,7 @@ export const PreviewPane: React.FC<PreviewPaneProps> = ({
 
       {/* Main Content Area */}
       <div className="preview-content-area">
+        {/* Tab 1: Rendered Document Paper (Full width) */}
         {activeTab === 'preview' && (
           <div
             className="rendered-document-paper"
@@ -228,6 +385,91 @@ export const PreviewPane: React.FC<PreviewPaneProps> = ({
           />
         )}
 
+        {/* Tab 2: LaTeX Code Viewer */}
+        {activeTab === 'latex' && (
+          <div className="latex-viewer-wrapper">
+            <div className="latex-sub-toolbar">
+              <div className="latex-sub-toolbar-left">
+                <span style={{ fontSize: '12px', fontWeight: 600, color: '#94a3b8' }}>Chế độ:</span>
+                <div className="latex-toggle-group">
+                  <button
+                    type="button"
+                    className={`latex-toggle-btn ${isStandaloneLatex ? 'active' : ''}`}
+                    onClick={() => setIsStandaloneLatex(true)}
+                  >
+                    Tài liệu hoàn chỉnh (\documentclass)
+                  </button>
+                  <button
+                    type="button"
+                    className={`latex-toggle-btn ${!isStandaloneLatex ? 'active' : ''}`}
+                    onClick={() => setIsStandaloneLatex(false)}
+                  >
+                    Chỉ phần nội dung (Snippet)
+                  </button>
+                </div>
+              </div>
+
+              <div className="latex-sub-toolbar-right">
+                <button
+                  type="button"
+                  className="btn-tool-latex"
+                  onClick={() => fetchLatex(isStandaloneLatex)}
+                  disabled={isLoadingLatex || !processedMarkdown.trim()}
+                  title="Tải lại mã LaTeX từ Pandoc"
+                >
+                  <RefreshCw size={13} className={isLoadingLatex ? 'spin' : ''} />
+                  <span>{isLoadingLatex ? 'Đang tạo...' : 'Làm mới'}</span>
+                </button>
+                <button
+                  type="button"
+                  className="btn-tool-latex"
+                  onClick={handleCopyLatex}
+                  disabled={!latexCode.trim()}
+                  title="Sao chép toàn bộ mã LaTeX"
+                >
+                  {copiedLatex ? <Check size={13} className="text-emerald" /> : <Copy size={13} />}
+                  <span>{copiedLatex ? 'Đã sao chép!' : 'Sao chép LaTeX'}</span>
+                </button>
+                <button
+                  type="button"
+                  className="btn-tool-latex"
+                  onClick={() => onExportLatex(isStandaloneLatex)}
+                  disabled={!processedMarkdown.trim() || isExportingLatex}
+                  title="Tải về file .tex"
+                >
+                  <Download size={13} />
+                  <span>Tải file .tex</span>
+                </button>
+              </div>
+            </div>
+
+            <div className="latex-editor-body">
+              <textarea
+                className="latex-textarea"
+                value={latexCode}
+                onChange={(e) => setLatexCode(e.target.value)}
+                placeholder={isLoadingLatex ? "Đang chuẩn hóa và xuất mã LaTeX qua Pandoc..." : "Chưa có nội dung LaTeX..."}
+                spellCheck={false}
+              />
+            </div>
+
+            <div className="latex-status-bar">
+              <div className="latex-status-info">
+                <span className="latex-status-badge">LaTeX / TeX</span>
+                <span>{latexCode.length > 0 ? `${latexCode.split('\n').length} dòng • ${latexCode.length.toLocaleString()} ký tự` : 'Trống'}</span>
+              </div>
+              <div>
+                {isLoadingLatex ? (
+                  <span>Đang xử lý qua Pandoc...</span>
+                ) : (
+                  <span>Tương thích hoàn toàn với Overleaf, TeX Live, MiKTeX</span>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Tab 3: Edit Markdown */}
         {activeTab === 'edit' && (
           <div className="editor-wrapper">
             <textarea
@@ -239,6 +481,7 @@ export const PreviewPane: React.FC<PreviewPaneProps> = ({
           </div>
         )}
 
+        {/* Tab 4: Blocks Inspector */}
         {activeTab === 'blocks' && (
           <div className="blocks-inspector">
             {blocks.length === 0 ? (

@@ -112,3 +112,65 @@ export async function uploadDocumentFile(file: File): Promise<{ filename: string
   }
   return resp.json();
 }
+
+export async function convertToLatex(
+  markdown: string,
+  standalone: boolean = true,
+  custom_filename?: string
+): Promise<{ latex: string; filename: string; warnings: any[] }> {
+  const resp = await fetch(`${API_BASE_URL}/api/convert-latex`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      markdown,
+      standalone,
+      custom_filename
+    })
+  });
+
+  if (!resp.ok) {
+    const errorData = await resp.json().catch(() => ({}));
+    throw new Error(errorData.detail || `Lỗi chuyển đổi LaTeX (Mã ${resp.status})`);
+  }
+
+  return resp.json();
+}
+
+export async function exportLatex(
+  markdown: string,
+  standalone: boolean = true,
+  custom_filename?: string
+): Promise<{ blob: Blob; filename: string }> {
+  const resp = await fetch(`${API_BASE_URL}/api/export-latex`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      markdown,
+      standalone,
+      custom_filename
+    })
+  });
+
+  if (!resp.ok) {
+    const errorData = await resp.json().catch(() => ({}));
+    throw new Error(errorData.detail || `Lỗi xuất file LaTeX (Mã ${resp.status})`);
+  }
+
+  let filename = custom_filename || 'document.tex';
+  if (!filename.endsWith('.tex')) filename += '.tex';
+  const disposition = resp.headers.get('Content-Disposition');
+  if (disposition) {
+    const utf8Match = disposition.match(/filename\*=UTF-8''([^;]+)/i);
+    if (utf8Match) {
+      filename = decodeURIComponent(utf8Match[1]);
+    } else {
+      const asciiMatch = disposition.match(/filename="?([^";]+)"?/i);
+      if (asciiMatch) {
+        filename = asciiMatch[1];
+      }
+    }
+  }
+
+  const blob = await resp.blob();
+  return { blob, filename };
+}
